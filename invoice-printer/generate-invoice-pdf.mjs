@@ -22,8 +22,15 @@ export default async function generatePdfInvoice(url) {
     
     const page = await browser.newPage();
     
-    // Set viewport size
-    await page.setViewport({ width: 1280, height: 800 });
+    // Set a more realistic viewport size
+    await page.setViewport({ 
+        width: 1920,
+        height: 1080,
+        deviceScaleFactor: 2 // Increase resolution for better quality
+    });
+
+    // Emulate screen media to ensure proper CSS loading
+    await page.emulateMediaType('screen');
     
     // Block cookie consent popups and trackers
     await page.setRequestInterception(true);
@@ -65,13 +72,26 @@ export default async function generatePdfInvoice(url) {
             }]
         });
 
+        // Navigate with extended timeout and wait for network idle
         await page.goto(url, { 
-            waitUntil: 'networkidle0',
-            timeout: 30000 
+            waitUntil: ['networkidle0', 'domcontentloaded', 'load'],
+            timeout: 60000 
         });
 
-        // Wait for any remaining dynamic content
+        // Wait for any remaining dynamic content and images to load
         await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Wait for all images to load
+        await page.evaluate(async () => {
+            const selectors = Array.from(document.getElementsByTagName('img'));
+            await Promise.all(selectors.map(img => {
+                if (img.complete) return;
+                return new Promise((resolve, reject) => {
+                    img.addEventListener('load', resolve);
+                    img.addEventListener('error', resolve); // Resolve on error too to avoid hanging
+                });
+            }));
+        });
 
         // Remove cookie banners and other popups
         await page.evaluate(() => {
@@ -109,16 +129,20 @@ export default async function generatePdfInvoice(url) {
             });
         });
 
+        // Generate PDF with improved settings
         await page.pdf({ 
-            path: 'data/invoice.pdf', 
-            printBackground: true, 
+            path: 'data/invoice.pdf',
+            printBackground: true,
             format: 'A4',
+            preferCSSPageSize: true,
+            displayHeaderFooter: false,
             margin: {
                 top: '20px',
                 right: '20px',
                 bottom: '20px',
                 left: '20px'
-            }
+            },
+            scale: 0.8 // Slightly reduce scale to ensure content fits
         });
     } finally {
         await browser.close();
