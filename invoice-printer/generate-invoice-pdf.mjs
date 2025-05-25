@@ -11,11 +11,19 @@ export default async function generatePdfInvoice(url) {
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-notifications',
-            '--disable-geolocation'
-        ]
+            '--disable-geolocation',
+            '--disable-infobars',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-site-isolation-trials'
+        ],
+        ignoreHTTPSErrors: true
     });
     
     const page = await browser.newPage();
+    
+    // Set viewport size
+    await page.setViewport({ width: 1280, height: 800 });
     
     // Block cookie consent popups and trackers
     await page.setRequestInterception(true);
@@ -27,7 +35,15 @@ export default async function generatePdfInvoice(url) {
             'cookielaw.org',
             'onetrust.com',
             'consensu.org',
-            'cookie-consent'
+            'cookie-consent',
+            'usercentrics.eu',
+            'privacy-mgmt.com',
+            'cookielaw.org',
+            'gdpr-legal-cookie.myshopify.com',
+            'cc.cdn.civiccomputing.com',
+            'cookie-cdn.cookiepro.com',
+            'cookiehub.net',
+            'cookienotice.js'
         ];
         
         if (blockedDomains.some(domain => request.url().includes(domain))) {
@@ -38,12 +54,26 @@ export default async function generatePdfInvoice(url) {
     });
 
     try {
+        // Set common cookie consent choices
+        const client = await page.target().createCDPSession();
+        await client.send('Network.setCookies', {
+            cookies: [{
+                name: 'CookieConsent',
+                value: 'true',
+                domain: '.example.com',
+                path: '/'
+            }]
+        });
+
         await page.goto(url, { 
             waitUntil: 'networkidle0',
             timeout: 30000 
         });
 
-        // Additional attempt to remove cookie banners via DOM
+        // Wait a bit for dynamic content
+        await page.waitForTimeout(2000);
+
+        // Remove cookie banners and other popups
         await page.evaluate(() => {
             const selectors = [
                 '#cookie-banner',
@@ -53,19 +83,42 @@ export default async function generatePdfInvoice(url) {
                 '[class*="cookie-banner"]',
                 '[id*="cookie-banner"]',
                 '[class*="cookie-consent"]',
-                '[id*="cookie-consent"]'
+                '[id*="cookie-consent"]',
+                '[class*="gdpr"]',
+                '[id*="gdpr"]',
+                '.modal',
+                '#modal',
+                '.popup',
+                '#popup',
+                '[class*="popup"]',
+                '[id*="popup"]'
             ];
             
             selectors.forEach(selector => {
                 const elements = document.querySelectorAll(selector);
                 elements.forEach(el => el.remove());
             });
+
+            // Remove fixed position elements that might be overlays
+            const allElements = document.querySelectorAll('*');
+            allElements.forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.position === 'fixed' || style.position === 'sticky') {
+                    el.remove();
+                }
+            });
         });
 
         await page.pdf({ 
             path: 'data/invoice.pdf', 
             printBackground: true, 
-            format: 'A4' 
+            format: 'A4',
+            margin: {
+                top: '20px',
+                right: '20px',
+                bottom: '20px',
+                left: '20px'
+            }
         });
     } finally {
         await browser.close();
