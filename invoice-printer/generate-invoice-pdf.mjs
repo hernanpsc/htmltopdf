@@ -70,8 +70,8 @@ export default async function generatePdfInvoice(url) {
             timeout: 30000 
         });
 
-        // Wait a bit for dynamic content
-        await page.waitForTimeout(2000);
+        // Wait for any remaining dynamic content
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Remove cookie banners and other popups
         await page.evaluate(() => {
